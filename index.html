@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>VANTA CORE</title>
+<style>
+:root{--bg:#050505;--ch:#1a1a1a;--cg:#7a7a7a;--fg:#d6d6d6;color-scheme:dark}
+html,body{margin:0;height:100%;background:var(--bg);overflow:hidden;font:11px/1.4 ui-monospace,Menlo,Consolas,monospace;color:var(--fg)}
+canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+#hud{position:fixed;left:0;top:0;padding:calc(env(safe-area-inset-top,0px) + 12px) 14px 0;pointer-events:none;letter-spacing:.08em;text-transform:uppercase}
+#hud h1{margin:0 0 6px;font-size:26px;line-height:1;font-weight:900;letter-spacing:.02em;border-bottom:3px solid var(--fg);padding-bottom:6px}
+#hud div{background:rgba(5,5,5,.7);display:inline-block;padding:1px 4px;margin:1px 0;border-left:3px solid var(--cg)}
+#bars{position:fixed;right:14px;bottom:calc(env(safe-area-inset-bottom,0px) + 12px);display:flex;gap:2px;align-items:flex-end;height:48px}
+#bars i{display:block;width:6px;background:var(--cg);min-height:2px}
+</style></head><body>
+<canvas id="c"></canvas>
+<div id="hud"><h1>VANTA CORE</h1><div id="a"></div><br><div id="b"></div><br><div id="d"></div></div>
+<div id="bars"></div>
+<script>
+"use strict";
+const cv=document.getElementById("c"),gl=cv.getContext("webgl2",{antialias:false,powerPreference:"high-performance"});
+if(!gl){document.body.textContent="WebGL 2.0 required";throw 0}
+const N=2000000;
+function sh(t,s){const o=gl.createShader(t);gl.shaderSource(o,s);gl.compileShader(o);if(!gl.getShaderParameter(o,gl.COMPILE_STATUS))throw gl.getShaderInfoLog(o);return o}
+function prog(v,f){const p=gl.createProgram();gl.attachShader(p,sh(gl.VERTEX_SHADER,v));gl.attachShader(p,sh(gl.FRAGMENT_SHADER,f));gl.linkProgram(p);if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw gl.getProgramInfoLog(p);return p}
+
+const bgP=prog(`#version 300 es
+void main(){vec2 p=vec2((gl_VertexID&1)*2,(gl_VertexID>>1)*2)*1.0;gl_Position=vec4(p*2.-1.+vec2(0.),0,1);}`.replace("vec2((gl_VertexID&1)*2,(gl_VertexID>>1)*2)*1.0","vec2(float(gl_VertexID&1),float(gl_VertexID>>1))").replace("p*2.-1.+vec2(0.)","p*2.-1."),
+`#version 300 es
+precision highp float;uniform vec2 uR;uniform float uT,uE;out vec4 o;
+float box(vec2 p,vec2 c,vec2 s){vec2 d=abs(p-c)-s;return max(d.x,d.y);}
+void main(){vec2 uv=gl_FragCoord.xy/uR;float a=uR.x/uR.y;vec2 p=(uv-.5)*vec2(a,1.);
+float v=.035+.03*(1.-length(uv-.5));
+vec2 q=fract(p*14.+vec2(uT*.02*(1.+uE*4.),0.));v+=max(step(.985,q.x),step(.985,q.y))*.05;
+for(int i=0;i<5;i++){float fi=float(i);
+ vec2 c=vec2(sin(uT*.13+fi*1.7)*.45*a,cos(uT*.11+fi*2.3)*.32);vec2 s=vec2(.14+.035*fi,.09+.03*fi);
+ float d=box(p,c,s);float edge=1.-smoothstep(0.,.003,abs(d));
+ float hatch=step(.5,fract((p.x+p.y*(1.+fi*.3))*55.+uT*.05*fi))*.05;
+ float noise=fract(sin(dot(floor(p*180.),vec2(12.9898,78.233))+floor(uT*3.)*fi)*43758.5)*.06;
+ v+=edge*(.22+.1*uE)+(d<0.?(fi<2.?hatch:noise)+.02:0.);
+ float cr=1.-smoothstep(0.,.002,abs(box(p,c,s+.012)-.0)); v+=cr*step(.7,fract(uT*.2+fi*.37))*.15;}
+o=vec4(vec3(v),1);}`);
+
+const ptP=prog(`#version 300 es
+precision highp float;
+uniform mat4 uVP;uniform float uT,uE,uP;uniform vec2 uM;uniform float uK;out float vA;
+uint h(uint x){x^=x>>16;x*=0x7feb352du;x^=x>>15;x*=0x846ca68bu;x^=x>>16;return x;}
+float f(uint x){return float(h(x))/4294967295.;}
+void main(){uint id=uint(gl_VertexID);
+ if(float(id)>uK){gl_Position=vec4(2,2,2,1);gl_PointSize=0.;vA=0.;return;}
+ vec3 p=vec3(f(id*3u+1u),f(id*3u+2u),f(id*3u+3u))*2.-1.;
+ float r0=f(id+77u);
+ vec3 g=floor(p*14.+.5)/14.; p=mix(p,g,step(.45,r0)*.85);          // kinetic lattice
+ float rad=length(p.xz);float ang=uT*(.12+.35*uE)*(1.-.6*rad)+rad*2.5*uP;  // differential rotation = inertia shear
+ float cs=cos(ang),sn=sin(ang);p.xz=mat2(cs,-sn,sn,cs)*p.xz;
+ p*=1.+.22*uP*sin(uT*.9+p.y*5.+r0*6.283);
+ p.y+=.08*sin(uT*.4+p.x*4.+r0*9.)*(1.+uE*3.);
+ vec2 d=p.xy-uM;float dd=dot(d,d)+.02;p.xy+=normalize(d+1e-4)*.06*(.4+uP*2.)/dd*step(.5,f(id+9u));
+ vec4 c=uVP*vec4(p,1);gl_Position=c;
+ gl_PointSize=1.+1.6*f(id+5u)*(1.+uP);
+ vA=(.25+.75*f(id+31u))*clamp(1.4-c.w*.22,.15,1.);}`,
+`#version 300 es
+precision highp float;in float vA;out vec4 o;void main(){o=vec4(vec3(vA*.07),1);}`);
+
+const vao=gl.createVertexArray();
+function mul(a,b){const r=new Float32Array(16);for(let i=0;i<4;i++)for(let j=0;j<4;j++){let s=0;for(let k=0;k<4;k++)s+=a[k*4+j]*b[i*4+k];r[i*4+j]=s}return r}
+function persp(fv,a,n,f){const t=1/Math.tan(fv/2);return new Float32Array([t/a,0,0,0,0,t,0,0,0,0,(f+n)/(n-f),-1,0,0,2*f*n/(n-f),0])}
+function rx(a){const c=Math.cos(a),s=Math.sin(a);return new Float32Array([1,0,0,0,0,c,s,0,0,-s,c,0,0,0,0,1])}
+function ry(a){const c=Math.cos(a),s=Math.sin(a);return new Float32Array([c,0,-s,0,0,1,0,0,s,0,c,0,0,0,0,1])}
+function tr(z){return new Float32Array([1,0,0,0,0,1,0,0,0,0,1,0,0,0,z,1])}
+
+const S={yaw:.6,pitch:.35,vy:0,vp:0,drag:false,lx:0,ly:0,mx:0,my:0,tmx:0,tmy:0,E:0,tE:0,P:0,tP:0,zoom:3.4,K:N};
+cv.addEventListener("pointerdown",e=>{S.drag=true;S.lx=e.clientX;S.ly=e.clientY;cv.setPointerCapture(e.pointerId);S.tP=1;fakeBurst=1});
+cv.addEventListener("pointerup",()=>S.drag=false);
+cv.addEventListener("pointermove",e=>{S.tmx=(e.clientX/innerWidth*2-1)*innerWidth/innerHeight;S.tmy=-(e.clientY/innerHeight*2-1);
+ if(S.drag){S.vy+=(e.clientX-S.lx)*.0006;S.vp+=(e.clientY-S.ly)*.0006;S.lx=e.clientX;S.ly=e.clientY}});
+cv.addEventListener("wheel",e=>{S.zoom=Math.max(1.8,Math.min(6,S.zoom+e.deltaY*.002));e.preventDefault()},{passive:false});
+
+// metrics: live from vanta_data_generator.py, else local simulation
+const M={tp:1,spike:0,entropy:7.9,density:.6,accepted:0,rejected:0,hist:new Array(16).fill(.3),live:false};
+let fakeBurst=0,base=1,tpS=1;
+async function poll(){try{const r=await fetch("http://127.0.0.1:8765/metrics",{cache:"no-store"});Object.assign(M,await r.json(),{live:true})}catch{M.live=false;
+ if(Math.random()<.015)fakeBurst=1;fakeBurst*=.96;M.spike=Math.min(1,fakeBurst);M.tp=(4e6)*(1+fakeBurst*15)*(.9+.2*Math.random());
+ M.entropy=7.7+.3*Math.random();M.density=.55+.3*fakeBurst;M.accepted++;M.hist=M.hist.map((v,i)=>Math.max(.05,Math.min(1,v*.9+Math.random()*.1*(1+(i%5==0?fakeBurst*3:0)))))}
+ setTimeout(poll,100)}
+poll();
+const bars=document.getElementById("bars");for(let i=0;i<16;i++)bars.appendChild(document.createElement("i"));
+
+const uBg={R:gl.getUniformLocation(bgP,"uR"),T:gl.getUniformLocation(bgP,"uT"),E:gl.getUniformLocation(bgP,"uE")};
+const uPt=Object.fromEntries(["uVP","uT","uE","uP","uM","uK"].map(n=>[n,gl.getUniformLocation(ptP,n)]));
+function resize(){const d=Math.min(devicePixelRatio||1,2);cv.width=innerWidth*d|0;cv.height=innerHeight*d|0;gl.viewport(0,0,cv.width,cv.height)}
+addEventListener("resize",resize);resize();
+
+let t0=performance.now(),last=t0,fps=60,fa=0,fn=0;
+const A=document.getElementById("a"),B=document.getElementById("b"),D=document.getElementById("d");
+function frame(now){const dt=Math.min((now-last)/1000,.05);last=now;const T=(now-t0)/1000;
+ fa+=dt;fn++;if(fa>.5){fps=fn/fa;fa=fn=0;
+  S.K=fps<40?Math.max(3e5,S.K*.85):Math.min(N,S.K*1.08)}   // adaptive density keeps ~60 FPS
+ tpS+=(M.tp-tpS)*.1;base+=(tpS-base)*.01;
+ S.tE=Math.min(1,tpS/(base*4+1)+M.spike*.6);S.E+=(S.tE-S.E)*Math.min(1,dt*3);   // inertial smoothing
+ S.tP=Math.max(S.tP*.97,M.spike);S.P+=(S.tP-S.P)*Math.min(1,dt*4);
+ S.mx+=(S.tmx-S.mx)*.08;S.my+=(S.tmy-S.my)*.08;
+ S.yaw+=S.vy+dt*.08*(1+S.E*2);S.pitch+=S.vp;S.vy*=.95;S.vp*=.95;S.pitch=Math.max(-1.2,Math.min(1.2,S.pitch));
+ const a=cv.width/cv.height,VP=mul(persp(1,a,.1,50),mul(tr(-S.zoom),mul(rx(S.pitch),ry(S.yaw))));
+ gl.bindVertexArray(vao);gl.disable(gl.BLEND);
+ gl.useProgram(bgP);gl.uniform2f(uBg.R,cv.width,cv.height);gl.uniform1f(uBg.T,T);gl.uniform1f(uBg.E,S.E);gl.drawArrays(gl.TRIANGLES,0,3);
+ gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE);
+ gl.useProgram(ptP);gl.uniformMatrix4fv(uPt.uVP,false,VP);gl.uniform1f(uPt.uT,T);gl.uniform1f(uPt.uE,S.E);gl.uniform1f(uPt.uP,S.P);
+ gl.uniform2f(uPt.uM,S.mx*.6,S.my*.6);gl.uniform1f(uPt.uK,S.K);gl.drawArrays(gl.POINTS,0,N);
+ A.textContent=`${M.live?"LIVE":"SIM"} // ${(M.tp/1e6).toFixed(2)} MB/s // SPIKE ${M.spike.toFixed(2)}`;
+ B.textContent=`H ${M.entropy.toFixed(2)}/8 // DENS ${M.density.toFixed(2)} // OK ${M.accepted} REJ ${M.rejected}`;
+ D.textContent=`${(S.K/1e6).toFixed(2)}M PARTICLES // ${fps.toFixed(0)} FPS`;
+ const bs=bars.children;for(let i=0;i<16;i++)bs[i].style.height=(M.hist[i]*100)+"%";
+ requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script></body></html>
